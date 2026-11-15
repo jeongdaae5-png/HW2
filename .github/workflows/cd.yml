@@ -34,6 +34,7 @@ jobs:
       - name: Start independent monitor before replacement
         shell: powershell
         run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $p = Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','ops/monitor.ps1','-BaseUrl','http://127.0.0.1:8000','-LogPath','artifacts/monitor.jsonl','-DurationSeconds','95' -PassThru
           Set-Content -Path artifacts/monitor.pid -Value $p.Id -Encoding utf8
@@ -78,10 +79,14 @@ jobs:
         if: always()
         shell: powershell
         run: |
-          $rows = @(); if (Test-Path artifacts/monitor.jsonl) { $rows = @(Get-Content artifacts/monitor.jsonl | ForEach-Object { $_ | ConvertFrom-Json }) }
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          $rows = @(); if (Test-Path artifacts/monitor.jsonl) { $rows = @(Get-Content -Encoding utf8 artifacts/monitor.jsonl | ForEach-Object { $_ | ConvertFrom-Json }) }
           $ok = @($rows | Where-Object { $_.status -eq 200 -and $_.analysis_ok }).Count; $fail = $rows.Count - $ok
           $versions = (($rows | Select-Object -ExpandProperty version -Unique) -join ', ')
-          @('## Deployment verification','', '| 항목 | 결과 |','|---|---|', '| 검증 주소 | http://127.0.0.1:8000/api/analyze |', "| 요청 성공 / 실패 | $ok / $fail |", "| 버전 전환 | $versions |", '| 요청 간격 | 1초 목표 |', '| 최대 기록 공백 | 로그의 인접 시작/종료 시각으로 확인 |', "| 대표 응답 | $($rows[0].status) / $($rows[-1].status) |", '| 무중단 관측 | 기록된 요청 범위에서 상태와 분석 결과를 확인 |') | Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          $evaluation = & python mlops/evaluate.py | Select-Object -Last 1 | ConvertFrom-Json
+          $summary = @('## Deployment verification','', '| 항목 | 결과 |','|---|---|', '| 검증 주소 | http://127.0.0.1:8000/api/analyze |', "| 요청 성공 / 실패 | $ok / $fail |", "| 버전 전환 | $versions |", '| 요청 간격 | 1초 목표 |', '| 최대 기록 공백 | 로그의 인접 시작/종료 시각으로 확인 |', "| 대표 응답 | $($rows[0].status) / $($rows[-1].status) |", '| 무중단 관측 | 기록된 요청 범위에서 상태와 분석 결과를 확인 |', '', '## Model evaluation (UTF-8)', '', '| 데이터 | 튜닝 | 최종 평가 | 정확도 | 일관성 | 상태 |', '|---|---:|---:|---:|---:|---|', "| $($evaluation.source) | $($evaluation.tuning) | $($evaluation.final) | $($evaluation.accuracy) | $($evaluation.consistency) | $($evaluation.status) |")
+          [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, ($summary -join [Environment]::NewLine) + [Environment]::NewLine, $utf8NoBom)
 
       - name: Upload UTF-8 monitoring logs
         if: always()
