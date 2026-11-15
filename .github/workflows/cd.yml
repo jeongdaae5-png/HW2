@@ -80,14 +80,7 @@ jobs:
         shell: powershell
         run: |
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-          $rows = @(); if (Test-Path artifacts/monitor.jsonl) { $rows = @(Get-Content -Encoding utf8 artifacts/monitor.jsonl | ForEach-Object { $_ | ConvertFrom-Json }) }
-          $ok = @($rows | Where-Object { $_.status -eq 200 -and $_.analysis_ok }).Count; $fail = $rows.Count - $ok
-          $versions = (($rows | Select-Object -ExpandProperty version -Unique) -join ', ')
-          $evaluation = & python mlops/evaluate.py | Select-Object -Last 1 | ConvertFrom-Json
-          $metrics = $evaluation.metrics
-          $summary = @('## Deployment verification','', '| Item | Result |','|---|---|', '| Verification URL | http://127.0.0.1:8000/api/analyze |', "| Request success / failure | $ok / $fail |", "| Version transition | $versions |", '| Request interval target | 1 second |', '| Maximum log gap | Calculated from adjacent timestamps; unobserved gaps remain marked |', "| Representative responses | $($rows[0].status) / $($rows[-1].status) |", '| Continuity observation | Only the observed request range is reported |', '', '## Model evaluation', '', '| Dataset | Tune | Final | Prediction consistency | Face detection before | Face detection after | Median RGB shift | Status |', '|---|---:|---:|---:|---:|---:|---:|---|', "| $($evaluation.source) | $($evaluation.tuning) | $($evaluation.final) | $($metrics.prediction_consistency) | $($metrics.face_detection_rate_before) | $($metrics.face_detection_rate_after) | $($metrics.median_rgb_shift) | $($evaluation.status) |")
-          [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, ($summary -join [Environment]::NewLine) + [Environment]::NewLine, $utf8NoBom)
+          python mlops/write_summary.py
 
       - name: Upload UTF-8 monitoring logs
         if: always()
