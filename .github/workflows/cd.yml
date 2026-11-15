@@ -36,7 +36,8 @@ jobs:
         run: |
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          $p = Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','ops/monitor.ps1','-BaseUrl','http://127.0.0.1:8000','-LogPath','artifacts/monitor.jsonl','-DurationSeconds','95' -PassThru
+          Set-Content -Path artifacts/stage.txt -Value 'Before' -Encoding utf8
+          $p = Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','ops/monitor.ps1','-BaseUrl','http://127.0.0.1:8000','-LogPath','artifacts/monitor.jsonl','-StagePath','artifacts/stage.txt','-DurationSeconds','95' -PassThru
           Set-Content -Path artifacts/monitor.pid -Value $p.Id -Encoding utf8
           Start-Sleep -Seconds 5
 
@@ -44,8 +45,9 @@ jobs:
         shell: powershell
         run: |
           $candidate = "$env:CONTAINER_NAME-candidate"
+          $revision = "v2-$($env:GITHUB_SHA.Substring(0,7))"
           docker rm -f $candidate 2>$null
-          docker run --detach --name $candidate --publish 8001:8000 --env MODEL_VERSION=v2 "${{ env.IMAGE_NAME }}:latest"
+          docker run --detach --name $candidate --publish 8001:8000 --env MODEL_VERSION=$revision "${{ env.IMAGE_NAME }}:latest"
           $ready = $false
           for ($i=1; $i -le 30; $i++) { try { if ((Invoke-WebRequest http://127.0.0.1:8001/ -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { $ready=$true; break } } catch { Start-Sleep 1 } }
           if (-not $ready) { docker logs $candidate; throw 'Candidate did not become ready' }
@@ -53,6 +55,8 @@ jobs:
       - name: Replace the running container
         shell: powershell
         run: |
+          Set-Content -Path artifacts/stage.txt -Value 'During' -Encoding utf8
+          $revision = "v2-$($env:GITHUB_SHA.Substring(0,7))"
           $existing = docker ps -aq --filter "name=^/${env:CONTAINER_NAME}$"
           if ($existing) {
             docker rm --force $existing
@@ -60,7 +64,7 @@ jobs:
           docker run --detach `
             --name $env:CONTAINER_NAME `
             --restart unless-stopped `
-            --publish "$env:HOST_PORT`:8000" `
+            --publish "$env:HOST_PORT`:8000" --env MODEL_VERSION=$revision `
             "$env:IMAGE_NAME`:latest"
 
       - name: Verify service after switch
@@ -73,7 +77,9 @@ jobs:
       - name: Keep monitoring for 30 seconds after deployment
         if: always()
         shell: powershell
-        run: Start-Sleep -Seconds 35
+        run: |
+          Set-Content -Path artifacts/stage.txt -Value 'After' -Encoding utf8
+          Start-Sleep -Seconds 35
 
       - name: Write monitoring summary
         if: always()

@@ -13,18 +13,24 @@ def main() -> None:
     metrics = evaluation.get("metrics", {})
     ok = sum(row.get("status") == 200 and row.get("analysis_ok") for row in rows)
     fail = len(rows) - ok
-    versions = ", ".join(dict.fromkeys(str(row.get("version", "unavailable")) for row in rows))
-    first = rows[0].get("status", "unobserved") if rows else "unobserved"
-    last = rows[-1].get("status", "unobserved") if rows else "unobserved"
+    contiguous = [row.get("id") for row in rows] == list(range(1, len(rows) + 1))
+    window_start = rows[0].get("start", "unobserved") if rows else "unobserved"
+    window_end = rows[-1].get("end", "unobserved") if rows else "unobserved"
+    success = "SUCCESS" if fail == 0 and rows else "FAILURE"
+    by_stage = {stage: [row for row in rows if str(row.get("stage", "")).lower() == stage.lower()] for stage in ("Before", "During", "After")}
+    stage_lines = []
+    for stage in ("Before", "During", "After"):
+        group = by_stage[stage]
+        stage_ok = sum(row.get("status") == 200 and row.get("analysis_ok") for row in group)
+        representative = group[0] if group else {}
+        stage_lines.append(f"| {stage} | {stage_ok}/{len(group)} | #{representative.get('id', 'unobserved')} | {representative.get('start', 'unobserved')} | {representative.get('status', 'unobserved')} | {representative.get('analysis_ok', 'unobserved')} | {representative.get('version', 'unobserved')} | {representative.get('result', 'unobserved')} |")
     lines = [
-        "## Deployment verification", "", "| Item | Result |", "|---|---|",
-        "| Verification URL | http://127.0.0.1:8000/api/analyze |",
-        f"| Request success / failure | {ok} / {fail} |",
-        f"| Version transition | {versions or 'unobserved'} |",
-        "| Request interval target | 1 second |",
-        "| Maximum log gap | Calculated from adjacent timestamps; unobserved gaps remain marked |",
-        f"| Representative responses | {first} / {last} |",
-        "| Continuity observation | Only the observed request range is reported |", "",
+        f"Result: {success} | Stable URL: http://127.0.0.1:8000 | Window (UTC): {window_start} to {window_end}",
+        f"API requests: {len(rows)} total, {ok} successful, {fail} failed, request IDs contiguous: {str(contiguous)}", "",
+        "## Deployment verification", "",
+        "| Stage | Requests (ok/total) | Representative request | UTC start | HTTP | Analysis | Response revision | Result |",
+        "|---|---:|---:|---|---:|---|---|---|",
+        *stage_lines, "",
         "## Model evaluation", "",
         "| Dataset | Tune | Final | Prediction consistency | Face detection before | Face detection after | Median RGB shift | Status |",
         "|---|---:|---:|---:|---:|---:|---:|---|",
