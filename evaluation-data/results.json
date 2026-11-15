@@ -1,0 +1,13 @@
+{
+  "source": "Labeled Faces in the Wild (LFW), public academic dataset",
+  "total": 100,
+  "tuning": 30,
+  "final": 70,
+  "metrics": {
+    "prediction_consistency": 0.0857,
+    "face_detection_rate_before": 1.0,
+    "face_detection_rate_after": 0.9857,
+    "median_rgb_shift": 62.91
+  },
+  "status": "proxy-metrics-only-no-personal-colour-ground-truth"
+}
