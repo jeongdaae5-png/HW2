@@ -1,5 +1,46 @@
 <!doctype html>
 <html lang="ko">
-  <head><meta charset="utf-8"><title>AI 퍼스널 컬러 진단</title></head>
-  <body><h1>AI 퍼스널 컬러 진단</h1><p>정적 화면을 준비 중입니다.</p></body>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TonePick | AI 퍼스널 컬러 진단</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">TONEPICK · AI COLOR ANALYSIS</p>
+        <h1>나에게 어울리는<br><span>퍼스널 컬러</span>를 찾아보세요.</h1>
+        <p class="intro">사진 한 장으로 피부 톤을 분석하고 어울리는 컬러 팔레트를 추천해 드립니다.</p>
+      </section>
+
+      <section class="card">
+        <form id="analyze-form">
+          <label class="dropzone" for="image-input" id="dropzone">
+            <input id="image-input" name="file" type="file" accept="image/*" required>
+            <img id="preview" alt="업로드한 사진 미리보기">
+            <span id="upload-copy">
+              <strong>사진을 선택해 주세요</strong>
+              <small>JPG, PNG, WEBP · 10MB 이하</small>
+            </span>
+          </label>
+          <button type="submit" id="submit-button">이 사진으로 분석하기</button>
+          <p class="error" id="error" role="alert"></p>
+        </form>
+      </section>
+
+      <section class="result card" id="result" hidden>
+        <div class="result-heading">
+          <div><p class="eyebrow">ANALYSIS RESULT</p><h2 id="result-type"></h2></div>
+          <span class="confidence" id="confidence"></span>
+        </div>
+        <p id="summary"></p>
+        <div class="metrics"><span>피부 RGB <b id="rgb"></b></span><span>HSV <b id="hsv"></b></span></div>
+        <h3>추천 컬러</h3><div class="swatches" id="recommended"></div>
+        <h3>피하면 좋은 컬러</h3><div class="swatches" id="avoid"></div>
+      </section>
+      <p class="notice">본 결과는 조명과 사진 품질에 따라 달라질 수 있는 참고용 분석입니다.</p>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
 </html>
