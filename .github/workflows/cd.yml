@@ -18,6 +18,9 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, windows, x64]
     steps:
+      - name: Check out repository tools
+        uses: actions/checkout@v4
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -27,6 +30,24 @@ jobs:
       - name: Pull the published image
         shell: powershell
         run: docker pull "${{ env.IMAGE_NAME }}:latest"
+
+      - name: Start independent monitor before replacement
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $p = Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','ops/monitor.ps1','-BaseUrl','http://127.0.0.1:8000','-LogPath','artifacts/monitor.jsonl','-DurationSeconds','95' -PassThru
+          Set-Content -Path artifacts/monitor.pid -Value $p.Id -Encoding utf8
+          Start-Sleep -Seconds 5
+
+      - name: Preflight new container on an unused port
+        shell: powershell
+        run: |
+          $candidate = "$env:CONTAINER_NAME-candidate"
+          docker rm -f $candidate 2>$null
+          docker run --detach --name $candidate --publish 8001:8000 --env MODEL_VERSION=v2 "${{ env.IMAGE_NAME }}:latest"
+          $ready = $false
+          for ($i=1; $i -le 30; $i++) { try { if ((Invoke-WebRequest http://127.0.0.1:8001/ -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { $ready=$true; break } } catch { Start-Sleep 1 } }
+          if (-not $ready) { docker logs $candidate; throw 'Candidate did not become ready' }
 
       - name: Replace the running container
         shell: powershell
@@ -40,6 +61,35 @@ jobs:
             --restart unless-stopped `
             --publish "$env:HOST_PORT`:8000" `
             "$env:IMAGE_NAME`:latest"
+
+      - name: Verify service after switch
+        shell: powershell
+        run: |
+          for ($i=1; $i -le 30; $i++) { try { if ((Invoke-WebRequest "http://127.0.0.1:$env:HOST_PORT/" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { exit 0 } } catch { Start-Sleep 1 } }
+          docker logs $env:CONTAINER_NAME
+          throw 'Service did not become ready after switch'
+
+      - name: Keep monitoring for 30 seconds after deployment
+        if: always()
+        shell: powershell
+        run: Start-Sleep -Seconds 35
+
+      - name: Write monitoring summary
+        if: always()
+        shell: powershell
+        run: |
+          $rows = @(); if (Test-Path artifacts/monitor.jsonl) { $rows = @(Get-Content artifacts/monitor.jsonl | ForEach-Object { $_ | ConvertFrom-Json }) }
+          $ok = @($rows | Where-Object { $_.status -eq 200 -and $_.analysis_ok }).Count; $fail = $rows.Count - $ok
+          $versions = (($rows | Select-Object -ExpandProperty version -Unique) -join ', ')
+          @('## Deployment verification','', '| 항목 | 결과 |','|---|---|', '| 검증 주소 | http://127.0.0.1:8000/api/analyze |', "| 요청 성공 / 실패 | $ok / $fail |", "| 버전 전환 | $versions |", '| 요청 간격 | 1초 목표 |', '| 최대 기록 공백 | 로그의 인접 시작/종료 시각으로 확인 |', "| 대표 응답 | $($rows[0].status) / $($rows[-1].status) |", '| 무중단 관측 | 기록된 요청 범위에서 상태와 분석 결과를 확인 |') | Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Upload UTF-8 monitoring logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-monitoring-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
 
       - name: Verify web service
         shell: powershell
